@@ -12,7 +12,7 @@ El objetivo es limpiar la información recibida, aplicar las reglas de negocio p
 
 ## Justificación de las reglas de calidad
 
-Antes de realizar cualquier análisis es importante asegurar que la información tenga una buena calidad. Si los datos contienen errores o inconsistencias, los resultados obtenidos también serán incorrectos.
+Antes de realizar cualquier análisis es importante asegurarnos que la información tenga una buena calidad. Si los datos contienen errores o inconsistencias, los resultados obtenidos también serán incorrectos.
 
 Las reglas implementadas cumplen ese propósito:
 
@@ -76,14 +76,13 @@ Las transacciones pendientes o rechazadas no representan gastos reales y por lo 
 - Supabase
 - PostgreSQL
 - SQL
-- Apache Airflow
 
 ---
 
 # Estructura del proyecto
 
 ```text
-fraude_pipeline/
+Prueba_Tecnica_Associate_Data_Engineer/
 
 ├── data/
 │   └── transacciones_diarias.csv
@@ -111,27 +110,27 @@ fraude_pipeline/
 
 # Ejecución del proyecto
 
-## 1. Instalar las dependencias
+## 1. Instalamos las dependencias
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## 2. Configurar Supabase
+## 2. Configuramos Supabase
 
-1. Crear un proyecto en Supabase.
-2. Obtener las credenciales de conexión.
-3. Crear el archivo `.env` con las variables necesarias.
+1. Creamos un proyecto en Supabase.
+2. Obtenemos las credenciales de conexión.
+3. Creamos el archivo `.env` con las variables necesarias.
 
-## 3. Crear la tabla
+## 3. Creamos la tabla
 
-Desde el **SQL Editor** de Supabase ejecutar el contenido del archivo:
+Desde el **SQL Editor** de Supabase ejecutamos el contenido del archivo:
 
 ```text
 sql/schema.sql
 ```
 
-## 4. Ejecutar el pipeline
+## 4. Ejecutamos el pipeline
 
 ```bash
 python pipeline.py
@@ -145,9 +144,9 @@ El pipeline realiza las siguientes actividades:
 - Genera la columna `es_monto_inusual`.
 - Carga los datos procesados en Supabase.
 
-## 5. Ejecutar la consulta SQL
+## 5. Ejecutamos la consulta SQL
 
-Abrir el **SQL Editor** de Supabase y ejecutar:
+Abrimos el **SQL Editor** de Supabase y ejecutamos:
 
 ```text
 sql/consulta_anomalias.sql
