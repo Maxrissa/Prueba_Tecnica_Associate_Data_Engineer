@@ -7,8 +7,8 @@ Este proyecto implementa un pipeline ETL para procesar un archivo diario de tran
 El objetivo es limpiar la información recibida, aplicar las reglas de negocio proporcionadas, almacenar los datos en una base de datos PostgreSQL mediante Supabase y realizar una consulta SQL para detectar posibles anomalías de gasto.
 
 ---
-**Integrante:** Daniella Marissa Navarro Araniva 
-**Repositorio:** 
+**Integrante:** Daniella Marissa Navarro Araniva                                                                                                                   
+**Repositorio:** https://github.com/Maxrissa/Prueba_Tecnica_Associate_Data_Engineer.git
 ---
 # Fase 1 – Diseño del flujo
 
