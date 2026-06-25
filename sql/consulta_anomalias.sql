@@ -1,81 +1,92 @@
 -- ============================================================
--- ANÁLISIS DE ANOMALÍAS DE GASTO
--- Banco - Área de Prevención de Fraude
+-- ANALISIS DE ANOMALIAS DE GASTO
+-- Banco - Prevencion de Fraude
 -- ============================================================
--- Objetivo: Identificar clientes cuya transaccion actual sea
---           al menos 5 veces mayor a su transacción inmediatamente
---           anterior.
---
--- Regla de Negocio 4 aplicada:
---   Solo se evalúaran transacciones con estado_transaccion = 'aprobada'.
---   Las pendientes y rechazadas quedan excluidas del cálculo.
 
+-- objetivo: detectar transacciones donde el monto actual
+-- es al menos 5 veces mayor que la anterior del mismo cliente
 
+-- regla de negocio 4:
+-- solo se consideran transacciones aprobadas
 
---  CTE 1: filtrar solo transacciones aprobadas 
+-- ============================================================
+
+-- CTE 1: filtrar solo transacciones aprobadas
 WITH aprobadas AS (
     SELECT
-        id_transaccion,
-        id_cliente,
-        fecha_hora,
-        monto_usd,
-        tipo_comercio,
-        es_monto_inusual
+        id_transaccion,  -- id unico de la transaccion
+        id_cliente,      -- id del cliente
+        fecha_hora,      -- fecha y hora de la transaccion
+        monto_usd,       -- monto de la transaccion en USD
+        tipo_comercio,   -- tipo de comercio (nacional/internacional)
+        es_monto_inusual -- bandera de monto inusual
     FROM transacciones_limpias
-    WHERE estado_transaccion = 'aprobada'
+    WHERE estado_transaccion = 'aprobada'  -- regla 4: solo aprobadas
 ),
 
---  CTE 2: calcular el monto de la transaccion anterior por cliente 
+-- CTE 2: obtener transaccion anterior por cliente
 con_anterior AS (
     SELECT
-        id_transaccion,
-        id_cliente,
-        fecha_hora,
-        monto_usd,
-        tipo_comercio,
-        es_monto_inusual,
-        -- Window Function: monto de la transacción inmediatamente anterior
-        -- del mismo cliente, ordenada por fecha
+        id_transaccion,  -- id de transaccion actual
+        id_cliente,      -- id del cliente
+        fecha_hora,      -- fecha de la transaccion
+        monto_usd,       -- monto actual
+        tipo_comercio,   -- tipo de comercio
+        es_monto_inusual,-- flag de monto inusual
+
+        -- lag obtiene el valor de la transaccion anterior del mismo cliente
         LAG(monto_usd) OVER (
-            PARTITION BY id_cliente
-            ORDER BY fecha_hora
+            PARTITION BY id_cliente   -- separa por cliente
+            ORDER BY fecha_hora       -- orden cronologico
         ) AS monto_anterior
     FROM aprobadas
 ),
 
--- ── CTE 3: calcular el ratio y marcar las anomalias ───────────────────────
+-- CTE 3: calcular anomalias de salto de gasto
 anomalias AS (
     SELECT
-        id_transaccion,
-        id_cliente,
-        fecha_hora,
-        monto_usd          AS monto_actual,
-        monto_anterior,
+        id_transaccion,  -- id de transaccion
+        id_cliente,      -- id cliente
+        fecha_hora,      -- fecha transaccion
+
+        monto_usd AS monto_actual,  -- renombrar monto actual
+        monto_anterior,             -- monto previo del cliente
+
+        -- calcular ratio entre monto actual y anterior
         ROUND(
-            (monto_usd / NULLIF(monto_anterior, 0))::numeric, 2
-        )                  AS ratio_vs_anterior,
-        es_monto_inusual
+            (monto_usd / NULLIF(monto_anterior, 0))::numeric,
+            2
+        ) AS ratio_vs_anterior,
+
+        es_monto_inusual  -- indicador de monto inusual
     FROM con_anterior
-    -- Solo interesara cuando haya una transaccion anterior con la que comparar
+
+    -- eliminar primeras transacciones sin comparacion
     WHERE monto_anterior IS NOT NULL
-      -- Regla de deteccion: transaccion actual >= 5x la anterior
-      AND monto_usd >= (5 * monto_anterior)
+
+      -- regla de negocio: detectar saltos >= 5 veces
+      AND (monto_usd / NULLIF(monto_anterior, 0)) >= 5
 )
 
---  RESULTADO FINAL 
+-- resultado final
 SELECT
-    id_cliente,
-    id_transaccion,
-    fecha_hora,
-    monto_anterior,
-    monto_actual,
-    ratio_vs_anterior,
-    es_monto_inusual,
-    -- Etiqueta descriptiva de la alerta
+    id_cliente,         -- cliente afectado
+    id_transaccion,     -- transaccion detectada
+    fecha_hora,         -- fecha evento
+    monto_anterior,     -- valor previo
+    monto_actual,       -- valor actual
+    ratio_vs_anterior,  -- multiplicador de incremento
+
+    es_monto_inusual,   -- flag de monto inusual
+
+    -- etiqueta de alerta
     CASE
         WHEN es_monto_inusual = TRUE
-        THEN ' ALERTA CRÍTICA: monto inusual + salto brusco'
-        ELSE '  ALERTA: salto brusco detectado'
+        THEN 'ALERTA CRITICA: monto inusual + salto brusco'
+        ELSE 'ALERTA: salto brusco detectado'
     END AS nivel_alerta
+
 FROM anomalias
+
+-- ordenar de mayor a menor impacto
 ORDER BY ratio_vs_anterior DESC, fecha_hora;

@@ -1,12 +1,9 @@
 """
 pipeline.py
 ───────────
-Pipeline de Datos - Prevención de Fraude
+Pipeline de Datos - Prevencion de Fraude
 Banco: Detección de Anomalías de Gasto
 
-Descripcion: Script modularizado que carga el CSV crudo, aplica
-             las reglas de negocio (1, 2 y 3) y persiste el resultado
-             en Parquet para que la fase de carga lo pueda cargar
 """
 
 import os
@@ -17,23 +14,47 @@ from dotenv import load_dotenv
 load_dotenv()
 
 CSV_PATH = os.getenv("CSV_PATH", "data/transacciones_diarias.csv")
+MONTO_INUSUAL = 1500
+
+COLUMNAS_REQUERIDAS = [
+    "id_transaccion",
+    "id_cliente",
+    "fecha_hora",
+    "monto_usd",
+    "tipo_comercio",
+    "estado_transaccion"
+]
 if not os.path.exists(CSV_PATH):
     raise FileNotFoundError(f"No se encontro el archivo: {CSV_PATH}")
 
 # FASE 1 – EXTRACCION
-
 
 def extraer_datos(ruta_csv: str) -> pd.DataFrame:
     """
     Carga el archivo CSV crudo y devuelve un DataFrame.
     Convierte fecha_hora a tipo datetime para operaciones ordenadas.
     """
-    print(f"[EXTRACCIÓN] Leyendo archivo: {ruta_csv}")
-    df = pd.read_csv(ruta_csv)
-    df["fecha_hora"] = pd.to_datetime(df["fecha_hora"])
-    print(f"  → {len(df)} registros cargados.")
-    return df
 
+    print(f"[EXTRACCIÓN] Leyendo archivo: {ruta_csv}")
+
+    df = pd.read_csv(ruta_csv)
+
+    faltantes = [
+        columna
+        for columna in COLUMNAS_REQUERIDAS
+        if columna not in df.columns
+    ]
+
+    if faltantes:
+        raise ValueError(
+            f"Columnas faltantes en el archivo: {faltantes}"
+        )
+
+    df["fecha_hora"] = pd.to_datetime(df["fecha_hora"])
+
+    print(f"  → {len(df)} registros cargados.")
+
+    return df
 
 # FASE 2 – TRANSFORMACION (Aqui se aplocan las reglas de Negocio 1, 2 y 3)
 
@@ -43,7 +64,10 @@ def regla_1_eliminar_duplicados(df: pd.DataFrame) -> pd.DataFrame:
     Se conserva la primera ocurrencia y se descartan las demas.
     """
     antes = len(df)
-    df = df.drop_duplicates(subset=["id_transaccion"], keep="first")
+    df = df.drop_duplicates(
+    subset=["id_transaccion"],
+    keep="first"
+    ).copy()
     despues = len(df)
     print(f"[REGLA 1] Duplicados eliminados: {antes - despues} filas. Quedan {despues}.")
     return df
@@ -66,7 +90,7 @@ def regla_3_clasificar_monto_inusual(df: pd.DataFrame) -> pd.DataFrame:
     En cualquier otro caso es False.
     """
     df["es_monto_inusual"] = (
-        (df["monto_usd"] > 1500) & (df["tipo_comercio"] == "internacional")
+        (df["monto_usd"] > MONTO_INUSUAL) & (df["tipo_comercio"] == "internacional")
     )
     inusuales = df["es_monto_inusual"].sum()
     print(f"[REGLA 3] Transacciones marcadas como inusuales: {inusuales}.")

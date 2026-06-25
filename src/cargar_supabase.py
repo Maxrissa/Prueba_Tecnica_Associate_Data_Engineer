@@ -1,6 +1,6 @@
 """
 cargar_supabase.py
-──────────────────
+
 
 Para cargar Subpabase hacemos uso del archivo .env con:
     SUPABASE_URL=https://<project>.supabase.co
@@ -12,7 +12,7 @@ import pandas as pd
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
-# ─── Cargamos las variables de entorno ───────────────────────────────────────────────
+#  Cargamos las variables de entorno 
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")

@@ -1,111 +1,74 @@
 """
 dag_transacciones.py
-────────────────────
-DAG de Apache Airflow que orquesta el pipeline diario de detección
-de anomalías de gasto del área de prevención de fraude.
-
-Programación: todos los días a las 11:30 PM (23:30)
-Dependencia estricta: la carga a la BD y la consulta SQL
-solo se ejecutan si la transformación Python finalizó con éxito.
+--------------------
+DAG de Apache Airflow para pipeline de fraude
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta  # imports de tiempo y retries
 
-from airflow import DAG
-from airflow.operators.python import PythonOperator
-from airflow.operators.bash import BashOperator
-from airflow.providers.postgres.operators.postgres import PostgresOperator
+from airflow import DAG  # clase principal del DAG
+from airflow.operators.bash import BashOperator  # operador para comandos bash
+from airflow.providers.postgres.operators.postgres import PostgresOperator  # operador SQL en postgres
 
 
-# ── Argumentos por defecto del DAG ────────────────────────────────────────────
+# configuracion general del DAG
 default_args = {
-    "owner": "data_engineering",
-    "depends_on_past": False,                      # no depende de ejecuciones anteriores
-    "email": ["fraude-alertas@banco.com"],
-    "email_on_failure": True,                      # notificar si falla
-    "email_on_retry": False,
-    "retries": 2,                                  # reintentar 2 veces ante fallo
-    "retry_delay": timedelta(minutes=5),           # esperar 5 min entre reintentos
-    "execution_timeout": timedelta(minutes=30),    # máximo 30 min por tarea
+    "owner": "data_engineering",  # propietario del pipeline
+    "depends_on_past": False,  # no depende de ejecuciones anteriores
+    "email": ["fraude-alertas@banco.com"],  # correo de alertas
+    "email_on_failure": True,  # notifica si falla
+    "email_on_retry": False,  # no notifica en reintentos
+    "retries": 2,  # numero de reintentos
+    "retry_delay": timedelta(minutes=5),  # tiempo entre reintentos
+    "execution_timeout": timedelta(minutes=30),  # timeout de tarea
 }
 
 
-# ── Definición del DAG ─────────────────────────────────────────────────────────
+# definicion del DAG principal
 with DAG(
-    dag_id="pipeline_fraude_diario",
-    description="Pipeline ETL diario: CSV crudo → limpieza → Supabase → análisis de anomalías",
-    schedule="30 23 * * *",                        # 23:30 todos los días
-    start_date=datetime(2026, 1, 1),
-    catchup=False,                                 # no ejecutar fechas pasadas
-    tags=["fraude", "etl", "diario"],
-    default_args=default_args,
+    dag_id="pipeline_fraude_diario",  # id del dag
+    description="Pipeline ETL diario de fraude",  # descripcion
+    schedule="30 23 * * *",  # ejecucion diaria 23:30
+    start_date=datetime(2026, 1, 1),  # fecha inicio
+    catchup=False,  # no ejecutar datos historicos
+    default_args=default_args,  # argumentos generales
+    tags=["fraude", "etl"],  # etiquetas del dag
 ) as dag:
 
-    # ── TAREA 1: Descargar / verificar que el CSV esté disponible ─────────────
+    # tarea 1: validar existencia del archivo csv
     verificar_csv = BashOperator(
-        task_id="verificar_archivo_csv",
-        bash_command=(
-            "FILE=/opt/airflow/fraude_pipeline/data/transacciones_diarias.csv; "
-            "if [ ! -f \"$FILE\" ]; then "
-            "  echo 'ERROR: Archivo no encontrado: $FILE'; exit 1; "
-            "else "
-            "  echo \"Archivo encontrado: $(wc -l < $FILE) líneas.\"; "
-            "fi"
-        ),
+        task_id="verificar_archivo_csv",  # id de tarea
+        bash_command="""
+        FILE=data/transacciones_diarias.csv  # ruta del archivo
+
+        if [ ! -f "$FILE" ]; then  # si no existe archivo
+            echo "ERROR archivo no encontrado"  # mensaje error
+            exit 1  # falla la tarea
+        fi
+
+        echo "archivo encontrado"  # confirma existencia
+        """,
     )
 
-    # ── TAREA 2: Transformación Python (reglas de negocio 1, 2 y 3) ──────────
-    #   Se importa la función main() del script modularizado.
-    def ejecutar_transformacion():
-        """Wrapper que importa y ejecuta el pipeline de transformación."""
-        import sys
-        sys.path.insert(0, "/opt/airflow/fraude_pipeline/src")
-        from pipeline import extraer_datos, transformar
-
-        CSV_PATH = "/opt/airflow/fraude_pipeline/data/transacciones_diarias.csv"
-        df_crudo  = extraer_datos(CSV_PATH)
-        df_limpio = transformar(df_crudo)
-
-        # Persistir el resultado en Parquet para la siguiente tarea
-        salida = "/opt/airflow/fraude_pipeline/data/transacciones_limpias.parquet"
-        df_limpio.to_parquet(salida, index=False)
-        print(f"[AIRFLOW] DataFrame limpio guardado en: {salida}")
-
-    transformacion_python = PythonOperator(
-        task_id="transformacion_python",
-        python_callable=ejecutar_transformacion,
+    # tarea 2: ejecutar transformacion del pipeline
+    transformacion_python = BashOperator(
+        task_id="transformacion_python",  # id tarea
+        bash_command="python src/pipeline.py",  # ejecuta ETL
     )
 
-    # ── TAREA 3: Carga a Supabase (PostgreSQL) ────────────────────────────────
-    def ejecutar_carga():
-        """Carga el Parquet intermedio a Supabase."""
-        import sys, pandas as pd
-        sys.path.insert(0, "/opt/airflow/fraude_pipeline/src")
-        from cargar_supabase import conectar_supabase, cargar_a_supabase
-
-        salida = "/opt/airflow/fraude_pipeline/data/transacciones_limpias.parquet"
-        df_limpio = pd.read_parquet(salida)
-
-        supabase = conectar_supabase()
-        cargar_a_supabase(df_limpio, supabase)
-
-    carga_supabase = PythonOperator(
-        task_id="carga_supabase",
-        python_callable=ejecutar_carga,
+    # tarea 3: cargar datos a supabase
+    carga_supabase = BashOperator(
+        task_id="carga_supabase",  # id tarea
+        bash_command="python src/cargar_supabase.py",  # carga postgres
     )
 
-    # ── TAREA 4: Consulta SQL analítica de anomalías ──────────────────────────
-    #   Usa la conexión "supabase_postgres" configurada en Airflow Connections.
+    # tarea 4: ejecutar consulta de anomalas en sql
     analisis_anomalias = PostgresOperator(
-        task_id="analisis_anomalias_sql",
-        postgres_conn_id="supabase_postgres",          # configurar en Airflow UI
-        sql="sql/consulta_anomalias.sql",              # relativo al folder airflow/dags/
-        autocommit=True,
+        task_id="analisis_anomalias_sql",  # id tarea
+        postgres_conn_id="supabase_postgres",  # conexion airflow
+        sql="sql/consulta_anomalias.sql",  # archivo sql
+        autocommit=True,  # commit automatico
     )
 
-    # ── DEPENDENCIAS: define el orden de ejecución ────────────────────────────
-    #
-    #   verificar_csv → transformacion_python → carga_supabase → analisis_anomalias
-    #
-    #   Si cualquier tarea falla, las siguientes NO se ejecutan.
-    verificar_csv >> transformacion_python >> carga_supabase >> analisis_anomalias
+    # orden de ejecucion del pipeline
+    verificar_csv >> transformacion_python >> carga_supabase >> analisis_anomalias  # flujo secuencial
