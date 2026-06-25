@@ -7,41 +7,33 @@ Este proyecto implementa un pipeline ETL para procesar un archivo diario de tran
 El objetivo es limpiar la información recibida, aplicar las reglas de negocio proporcionadas, almacenar los datos en una base de datos PostgreSQL mediante Supabase y realizar una consulta SQL para detectar posibles anomalías de gasto.
 
 ---
-**Integrante:** Daniella Marissa Navarro Araniva                                                                                                                   
-**Repositorio:** https://github.com/Maxrissa/Prueba_Tecnica_Associate_Data_Engineer.git
+## Integrante
+
+Daniella Marissa Navarro Araniva
+
+Repositorio:  
+
+https://github.com/Maxrissa/Prueba_Tecnica_Associate_Data_Engineer
+
 ---
-# Fase 1 – Diseño del flujo
 
-## Justificación de las reglas de calidad
+# Fase 1 - Diseño del flujo de datos
 
-Antes de realizar cualquier análisis es importante asegurarnos que la información tenga una buena calidad. Si los datos contienen errores o inconsistencias, los resultados obtenidos también serán incorrectos.
+## Importancia de la calidad de datos
 
-Las reglas implementadas cumplen ese propósito:
+En un sistema de deteccion de fraude, la calidad de los datos es critica ya que errores pueden generar alertas incorrectas.
 
-### Eliminación de registros duplicados
+### Eliminacion de duplicados
+Se eliminan registros duplicados usando `id_transaccion` como clave unica.
 
-Se eliminan las transacciones duplicadas utilizando `id_transaccion` como identificador único. Esto evita contar una misma operación más de una vez.
+### Tratamiento de nulos
+Los valores nulos en `monto_usd` se reemplazan por 0 cuando la transaccion es rechazada.
 
-### Tratamiento de valores nulos
+### Clasificacion de montos inusuales
+Se crea la variable `es_monto_inusual` que identifica transacciones internacionales mayores a 1500 USD.
 
-Cuando una transacción fue rechazada y el monto aparece vacío, se reemplaza por **0.0**. De esta manera se evita trabajar con valores nulos y se representa correctamente que la transacción no generó un cargo.
-
-### Clasificación de montos inusuales
-
-Se crea la columna **es_monto_inusual**, la cual toma el valor **True** únicamente cuando:
-
-- el monto es mayor a **1500 USD**
-- el tipo de comercio es **internacional**
-
-En cualquier otro caso el valor es **False**.
-
-Esta columna facilita futuros análisis sin necesidad de volver a calcular la condición.
-
-### Análisis únicamente sobre transacciones aprobadas
-
-Para identificar anomalías de gasto únicamente se consideran las transacciones con estado **aprobada**.
-
-Las transacciones pendientes o rechazadas no representan gastos reales y por lo tanto no deben formar parte del análisis.
+### Filtrado de analisis
+Solo se consideran transacciones aprobadas para evitar datos innecesarios en el analisis.
 
 ---
 
@@ -55,11 +47,10 @@ Las transacciones pendientes o rechazadas no representan gastos reales y por lo 
                            │
                            ▼
                   Transformación de datos
-          ┌──────────────────────────────────┐
-          │ • Eliminar duplicados            │
-          │ • Corregir valores nulos         │
-          │ • Crear es_monto_inusual         │
-          └──────────────────────────────────┘
+                  • Eliminar duplicados            
+                  • Corregir valores nulos         
+                  • Crear es_monto_inusual         
+          
                            │
                            ▼
              Carga en Supabase (PostgreSQL)
@@ -68,7 +59,7 @@ Las transacciones pendientes o rechazadas no representan gastos reales y por lo 
         Consulta SQL (CTEs + Window Functions)
                            │
                            ▼
-          Detección de anomalías de gasto
+          Detección de anomalias de gasto
 ```
 
 ## Tecnologías utilizadas
@@ -78,6 +69,7 @@ Las transacciones pendientes o rechazadas no representan gastos reales y por lo 
 - Supabase
 - PostgreSQL
 - SQL
+- Parquet
 
 ---
 
@@ -101,7 +93,8 @@ Prueba_Tecnica_Associate_Data_Engineer/
 │   └── dag_transacciones.py
 │
 ├── images/
-│   └── consulta_sql.png
+│   ├── consulta_sql.png
+│   └── transacciones_limpias.png
 │
 ├── requirements.txt
 │
@@ -120,9 +113,9 @@ pip install -r requirements.txt
 
 ## 2. Configuramos Supabase
 
-1. Creamos un proyecto en Supabase.
+1. Creamos un proyecto en Supabase: Prueba Técnica Associate Data Engineer
 2. Obtenemos las credenciales de conexión.
-3. Creamos el archivo `.env` con las variables necesarias.
+3. Creamos el archivo `.env` con las variables de SUPABASE_URL y SUPABASE_KEY.
 
 ## 3. Creamos la tabla
 
@@ -131,20 +124,19 @@ Desde el **SQL Editor** de Supabase ejecutamos el contenido del archivo:
 ```text
 sql/schema.sql
 ```
-
 ## 4. Ejecutamos el pipeline
 
 ```bash
-python pipeline.py
+python src/pipeline.py
 ```
 
-El pipeline realiza las siguientes actividades:
+El pipeline ETL realiza el procesamiento completo de las transacciones siguiendo reglas de negocio definidas para deteccion de fraude:
 
-- Lee el archivo CSV.
-- Elimina registros duplicados.
-- Corrige valores nulos.
-- Genera la columna `es_monto_inusual`.
-- Carga los datos procesados en Supabase.
+- Ingiere el archivo CSV de transacciones diarias como fuente de datos.
+- Aplica limpieza de datos eliminando registros duplicados utilizando `id_transaccion` como clave unica.
+- Corrige valores nulos en `monto_usd` cuando la transaccion es rechazada, asignando un valor de 0.0.
+- Genera la variable `es_monto_inusual` para identificar transacciones internacionales mayores a 1500 USD.
+- Persisten los datos procesados en una tabla de PostgreSQL (Supabase) para su posterior analisis.
 
 ## 5. Ejecutamos la consulta SQL
 
@@ -179,7 +171,28 @@ Consulta SQL
 Cada tarea depende de que la anterior finalice correctamente.
 
 ---
+# Modelo de datos
 
+Para este proyecto se utilizo una unica tabla (`transacciones_limpias`) que concentra todo el proceso de transformacion y facilita la implementacion del pipeline.
+
+En un entorno productivo, se recomienda la implementacion de un modelo dimensional en esquema estrella para optimizar el analisis y la escalabilidad del sistema:
+
+- **Fact_Transacciones**: tabla principal con los hechos transaccionales (montos, estados, fechas).
+- **Dim_Cliente**: dimension con informacion descriptiva de los clientes.
+- **Dim_Fecha**: dimension de tiempo para analisis temporal.
+- **Dim_Comercio**: dimension que clasifica el tipo de comercio.
+
+Aplicarlo permite mejorar el rendimiento de las consultas analiticas y facilita la construccion de dashboards y modelos de deteccion de fraude.
+
+---
 # Evidencia
-![Consulta SQL Supabase](images/consulta_sql.png)
+## Consulta SQL en Supabase
+
+![Consulta SQL](images/consulta_sql.png)
+
+---
+
+## Datos cargados en tabla transacciones_limpias
+
+![Tabla transacciones limpias](images/transacciones_limpias.png)
 ---
